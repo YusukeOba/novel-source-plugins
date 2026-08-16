@@ -43,10 +43,17 @@ const CHECKS = [
     async run(api) {
       const periods = api.manifest.rankingPeriods || [];
       if (periods.length === 0) return "対応していない（宣言どおり）";
-      const key = periods[0].key;
-      const items = await api.ranking(key);
-      if (!Array.isArray(items) || items.length === 0) throw new Error(`${key} が0件`);
-      return `${key} ${items.length}件`;
+      // **名乗った区分は全部見る。** 先頭だけ試すと、4つ名乗って1つしか
+      // 動かない拡張が通ってしまう。読む人には、押しても何も出ない区分に見える
+      const counts = [];
+      for (const period of periods) {
+        const items = await api.ranking(period.key);
+        if (!Array.isArray(items) || items.length === 0) {
+          throw new Error(`${period.key}（${period.label}）が0件`);
+        }
+        counts.push(`${period.key} ${items.length}件`);
+      }
+      return counts.join(" / ");
     },
   },
   {

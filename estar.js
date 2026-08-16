@@ -8,14 +8,19 @@
 const manifest = {
   id: "estar",
   name: "エブリスタ",
-  version: "1.0.0",
+  version: "1.1.0",
   accent: "#00a960",
   hosts: ["estar.jp"],
   urlPatterns: ["estar\\.jp/novels/(\\d+)"],
   novelPageUrl: "https://estar.jp/novels/{id}",
-  // 一覧の並び替えはあるが、期間で切ったランキングは出していない。
-  // **無いものを別のもので埋めない**
-  rankingPeriods: [],
+  // 期間は `ranking_axis_type` そのもの。日間だけ `general_popular` という
+  // 名前で、ほかと揃っていない
+  rankingPeriods: [
+    { key: "general_popular", label: "日間" },
+    { key: "monthly_popular", label: "月間" },
+    { key: "quarterly_popular", label: "四半期" },
+    { key: "yearly_popular", label: "年間" },
+  ],
   emptyQuery: true,
   tagFilterKey: "tag",
   filters: [
@@ -153,7 +158,25 @@ async function search(q, page, filter) {
 }
 
 async function ranking(periodKey) {
-  throw new Error("この配信元は期間ごとのランキングを公開していません");
+  // 名乗った区分以外を受け取らない。知らない値をそのままURLへ載せると、
+  // 配信元の一覧ページへ好きな条件を投げられる
+  const known = manifest.rankingPeriods.some(p => p.key === periodKey);
+  if (!known) throw new Error("この期間のランキングはありません");
+  const data = await payload(BASE + "/novels/ranking?" + query({
+    ranking_axis_type: periodKey,
+    // 全て（新作・完結・短編に絞ることもできるが、ここは総合を出す）
+    ranking_type: "all",
+  }));
+  const seen = {};
+  const out = [];
+  for (const work of collect(data, ["workId", "title"])) {
+    const summary = toSummary(work);
+    if (!summary.id || !summary.title || seen[summary.id]) continue;
+    seen[summary.id] = true;
+    out.push(summary);
+  }
+  if (out.length === 0) throw new Error("この期間のランキングはまだ公開されていません");
+  return out;
 }
 
 async function summaries(ids) {
