@@ -105,6 +105,28 @@ const CHECKS = [
     },
   },
   {
+    // **実機で踏んだ。** 1話しかない作品は目次を持たない配信元があり
+    // （作品ページそのものが本文）、「全1話」と出ているのに開けなかった。
+    // 下の確認は段落を見るために話数の多い作品を選ぶので、ここが死角になる
+    name: "短編",
+    async run(api, state) {
+      const short = state.shortId;
+      if (!short) return "検索結果に1話の作品が無く、確かめられなかった";
+      const detail = await api.detail(short);
+      if (!detail.episodes || detail.episodes.length === 0) {
+        throw new Error(`1話の作品（${short}）の目次が0話。開けない作品になる`);
+      }
+      const first = detail.episodes[0];
+      const body = await api.episode(short, first.episodeKey, first.episodeNo);
+      const lines = (body.paragraphs || []).filter(p => p.text && p.text.trim());
+      const chars = lines.reduce((n, p) => n + p.text.length, 0);
+      if (chars < MIN_BODY_CHARS) {
+        throw new Error(`1話の作品（${short}）の本文が${chars}字しか取れない`);
+      }
+      return `${short}: ${detail.episodes.length}話 / ${chars}字`;
+    },
+  },
+  {
     name: "更新チェック",
     async run(api, state) {
       // 本棚の更新確認で毎日走る経路。**ここが壊れると新着に気づけなくなる**
@@ -157,6 +179,10 @@ for (const file of index.sources) {
     const picked = usable[0] || items[0];
     state.novelId = picked && picked.id;
     state.novelTitle = picked && picked.title;
+    // 1話しかない作品も別に控える。上で意図的に避けているぶん、
+    // そこだけ確かめられないままになる
+    const single = items.find(n => n.episodeCount === 1);
+    state.shortId = single && single.id;
   } catch (e) { /* 検索の確認で落ちる */ }
 
   if (state.novelId) {

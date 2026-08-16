@@ -6,7 +6,7 @@
 const manifest = {
   id: "narou",
   name: "小説家になろう",
-  version: "1.0.0",
+  version: "1.0.1",
   // syosetu.com の CSS 変数 --color-site
   accent: "#18b7cd",
   hosts: ["syosetu.com", "api.syosetu.com", "ncode.syosetu.com"],
@@ -236,6 +236,18 @@ async function detail(id) {
     episodes.push(...found);
   }
 
+  // **短編には目次が無い。** 作品ページそのものが本文で、話番号の付いたURL
+  // （`/n0000aa/1/`）は 404 を返す。1話だけの目次に均しておかないと、
+  // 「全1話」と出ているのに開けない作品になる。ランキング上位には短編が多い
+  if (episodes.length === 0 && isShortForm(meta, first.body)) {
+    episodes.push({
+      episodeKey: SHORT_KEY,
+      title: meta ? meta.title : "",
+      chapter: null,
+      sourceUpdatedAt: meta ? meta.lastUpdatedAt : null,
+    });
+  }
+
   // **話番号は本文URLの数字をそのまま使う。** 並んだ順で振り直すと、
   // 途中のページを取りこぼしたときに以降が全部ずれ、既読としおりが別の話に付く
   episodes.forEach((e, i) => {
@@ -253,6 +265,26 @@ async function detail(id) {
     episodes: episodes,
     tocComplete: complete,
   };
+}
+
+/**
+ * 短編の本文を指す話キー。
+ *
+ * 番号の付いたURLが存在しないことを表す。**空文字にしない** — 話キーは
+ * どの話にも必ずあるものとして扱われており、空にすると
+ * `episodeKey || 既定値` のような書き方が静かに別の話を指す
+ */
+const SHORT_KEY = "short";
+
+/**
+ * 短編かどうか。
+ *
+ * 名乗り（noveltype=2）で分かるが、APIを引けなかったときのために
+ * ページ自身も見る。作品ページに本文の区画があれば、それは短編
+ */
+function isShortForm(meta, html) {
+  if (meta && meta.isShort) return true;
+  return host.select(html, ".p-novel__body").length > 0;
 }
 
 function pagerLast(html) {
@@ -302,7 +334,9 @@ function parseUpdate(html) {
 async function episode(novelId, episodeKey, episodeNo) {
   const code = String(novelId).toLowerCase();
   const key = episodeKey || String(episodeNo);
-  const res = await host.fetch("https://ncode.syosetu.com/" + code + "/" + key + "/");
+  // 短編は作品ページそのものが本文で、番号の付いたURLは 404 を返す
+  const path = key === SHORT_KEY ? "" : key + "/";
+  const res = await host.fetch("https://ncode.syosetu.com/" + code + "/" + path);
   if (res.status !== 200) throw new Error("本文を取得できませんでした（" + res.status + "）");
 
   const titleNode = host.select(res.body, "h1.p-novel__title")[0];
