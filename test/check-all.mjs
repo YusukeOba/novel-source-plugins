@@ -19,6 +19,9 @@ const MIN_BODY_CHARS = 200;
 /** 1段落としてありえる最大。超えるなら段落の区切りが失われている */
 const MAX_SINGLE_PARAGRAPH_CHARS = 600;
 
+/** 1話の作品を探して見るページ数。1ページ目だけだとその日の並みに左右される */
+const SHORT_SCAN_PAGES = 3;
+
 /** 本文のある話を探して試す数。章の見出しが続くことがある */
 const MAX_EPISODE_TRIES = 5;
 
@@ -111,7 +114,11 @@ const CHECKS = [
     name: "短編",
     async run(api, state) {
       const short = state.shortId;
-      if (!short) return "検索結果に1話の作品が無く、確かめられなかった";
+      if (!short) {
+        return state.reportsCounts
+          ? `1話の作品が${state.shortScanned}件中に無く、確かめられなかった`
+          : "この配信元は一覧に話数を出さないため、1話の作品を選べない";
+      }
       const detail = await api.detail(short);
       if (!detail.episodes || detail.episodes.length === 0) {
         throw new Error(`1話の作品（${short}）の目次が0話。開けない作品になる`);
@@ -180,9 +187,21 @@ for (const file of index.sources) {
     state.novelId = picked && picked.id;
     state.novelTitle = picked && picked.title;
     // 1話しかない作品も別に控える。上で意図的に避けているぶん、
-    // そこだけ確かめられないままになる
-    const single = items.find(n => n.episodeCount === 1);
+    // そこだけ確かめられないままになる。
+    // **1ページ目だけだと、その日の並び次第で見つかったり見つからなかったり
+    // する。** 見つからない日に黙って素通りすると、確認したことにならない
+    let scanned = items;
+    for (let page = 2; page <= SHORT_SCAN_PAGES && !scanned.some(n => n.episodeCount === 1); page++) {
+      try {
+        scanned = scanned.concat(await api.search("異世界", page, {}));
+      } catch (e) { break; }
+    }
+    const single = scanned.find(n => n.episodeCount === 1);
     state.shortId = single && single.id;
+    // 話数を一覧に出さない配信元では、そもそも 1 を探せない。
+    // 「探したが無かった」と区別して言う
+    state.reportsCounts = scanned.some(n => n.episodeCount > 0);
+    state.shortScanned = scanned.length;
   } catch (e) { /* 検索の確認で落ちる */ }
 
   if (state.novelId) {
