@@ -1,0 +1,12 @@
+{
+  "name": "novel-source-plugins",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node test/check-all.mjs",
+    "check:manifests": "node test/check-manifests.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}

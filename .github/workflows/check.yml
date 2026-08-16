@@ -1,0 +1,46 @@
+name: check
+
+# Sites change their markup without notice. A single selector change makes search
+# return nothing and bodies come back empty, and neither throws, so the breakage is
+# invisible until someone tries to read.
+
+on:
+  schedule:
+    - cron: '0 21 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Nothing here writes anything back.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions are pinned to commits, not tags. A tag can be repointed by whoever
+      # owns the action, which would run different code here without a change on
+      # this side. The trailing comment is the tag each commit corresponded to.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      # `npm ci` installs exactly the versions and hashes in package-lock.json and
+      # fails if the lockfile disagrees with package.json. `--ignore-scripts` keeps
+      # install-time hooks from running.
+      - run: npm ci --ignore-scripts
+
+      - name: Syntax
+        run: for f in *.js; do node --check "$f"; done
+
+      - name: Manifests
+        run: node test/check-manifests.mjs
+
+      - name: Live sites
+        run: node test/check-all.mjs
